@@ -12,11 +12,13 @@ use defmt::{info, warn};
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_hal::clock::CpuClock;
+use esp_hal::gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig};
+use esp_hal::i2c::master::Config as I2cConfig;
+use esp_hal::i2c::master::I2c;
 use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
+use esp_hal::{handler, ram, Blocking};
 use {esp_backtrace as _, esp_println as _};
-use esp_hal::gpio::{Output, OutputConfig, Level, Input, InputConfig, Event, Io};
-use esp_hal::{handler, ram};
 
 extern crate alloc;
 
@@ -26,6 +28,7 @@ esp_bootloader_esp_idf::esp_app_desc!();
 
 static BOOT_BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static LED: Mutex<RefCell<Option<Output>>> = Mutex::new(RefCell::new(None));
+static I2C: Mutex<RefCell<Option<I2c<Blocking>>>> = Mutex::new(RefCell::new(None));
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -40,6 +43,10 @@ async fn main(spawner: Spawner) {
     esp_hal_embassy::init(timer0.alarm0);
 
     info!("Embassy initialized!");
+
+    let i2c = I2c::new(peripherals.I2C0, I2cConfig::default()).expect("Failed to initialize I2C");
+
+    critical_section::with(|cs| I2C.borrow_ref_mut(cs).replace(i2c));
 
     let rng = esp_hal::rng::Rng::new(peripherals.RNG);
     let timer1 = TimerGroup::new(peripherals.TIMG0);
@@ -60,10 +67,9 @@ async fn main(spawner: Spawner) {
         BOOT_BUTTON.borrow_ref_mut(cs).replace(boot_button)
     });
 
-    critical_section::with(|cs| {
-        LED.borrow_ref_mut(cs).replace(led)
-    });
+    critical_section::with(|cs| LED.borrow_ref_mut(cs).replace(led));
 
+    spawner.spawn(i2c_scan()).ok();
     spawner.spawn(run()).expect("run spawn failed");
     spawner.spawn(button_task()).expect("run spawn failed");
 }
@@ -84,6 +90,29 @@ async fn button_task() {
     }
 }
 
+#[embassy_executor::task]
+async fn i2c_scan() {
+    info!("Starting I2C scan...");
+    critical_section::with(|cs| {
+        let mut i2c = I2C.borrow_ref_mut(cs);
+        let i2c_ref = i2c.as_mut().unwrap();
+
+        for addr in 0x08..=0x77 {
+            match i2c_ref.write(addr, &[]) {
+                Ok(_) => {
+                    info!("Found device at address: 0x{:02X}", addr);
+                }
+                Err(_) => {
+                    warn!("No device at address: 0x{:02X}", addr)
+                }
+            }
+        }
+    });
+}
+
+/**
+ * 响应中断
+ */
 #[handler]
 #[ram]
 fn handler() {
@@ -101,10 +130,7 @@ fn handler() {
     }) {
         info!("boot button was the source of the interrupt");
         critical_section::with(|cs| {
-            LED.borrow_ref_mut(cs)
-                .as_mut()
-                .unwrap()
-                .toggle();
+            LED.borrow_ref_mut(cs).as_mut().unwrap().toggle();
         });
     } else {
         warn!("Button was not the source of the interrupt");
