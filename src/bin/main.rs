@@ -13,11 +13,7 @@ use esp_hal::clock::CpuClock;
 use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
 use {esp_backtrace as _, esp_println as _};
-use esp_hal::gpio:: {
-    Output,
-    OutputConfig,
-    Level
-};
+use esp_hal::gpio::{Output, OutputConfig, Level, Input, InputConfig};
 
 extern crate alloc;
 
@@ -46,14 +42,31 @@ async fn main(spawner: Spawner) {
     let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
 
+    // 分配 GPIO 引脚
     let mut led = Output::new(peripherals.GPIO1, Level::Low, OutputConfig::default());
+    let boot_button = Input::new(peripherals.GPIO0, InputConfig::default());
     // TODO: Spawn some tasks
     let _ = spawner;
 
+    // 初始化 LED 状态 (假设初始为关闭)
+    led.set_low();
+
+    let mut last_button_state = false;
+
     loop {
-        info!("Hello world!");
-        led.toggle();
-        Timer::after(Duration::from_secs(1)).await;
+        // 读取按键状态
+        let current_button_state  = boot_button.is_high();
+        if current_button_state && !last_button_state {
+            // 简单防抖
+            Timer::after(Duration::from_millis(20)).await;
+            // 再次检查
+            if boot_button.is_high() {
+                info!("Button pressed!");
+                // 翻转 LED 状态
+                led.toggle();
+            }
+        }
+        last_button_state = current_button_state;
     }
 
     // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
