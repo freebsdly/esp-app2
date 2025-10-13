@@ -43,31 +43,37 @@ async fn main(spawner: Spawner) {
         .expect("Failed to initialize WIFI controller");
 
     // 分配 GPIO 引脚
-    let mut led = Output::new(peripherals.GPIO1, Level::Low, OutputConfig::default());
+    let led = Output::new(peripherals.GPIO1, Level::Low, OutputConfig::default());
     let boot_button = Input::new(peripherals.GPIO0, InputConfig::default());
-    // TODO: Spawn some tasks
-    let _ = spawner;
 
+    spawner.spawn(run()).expect("run spawn failed");
+    spawner.spawn(button_task(boot_button, led)).expect("button_task spawn failed");
+}
+
+#[embassy_executor::task]
+async fn run() {
+    loop {
+        info!("tick");
+        Timer::after_secs(1).await;
+    }
+}
+
+#[embassy_executor::task]
+async fn button_task(boot_button: Input<'static>, mut led: Output<'static>) {
     // 初始化 LED 状态 (假设初始为关闭)
     led.set_low();
-
     let mut last_button_state = false;
 
     loop {
-        // 读取按键状态
-        let current_button_state  = boot_button.is_high();
+        let current_button_state = boot_button.is_high();
         if current_button_state && !last_button_state {
-            // 简单防抖
             Timer::after(Duration::from_millis(20)).await;
-            // 再次检查
             if boot_button.is_high() {
                 info!("Button pressed!");
-                // 翻转 LED 状态
                 led.toggle();
             }
         }
         last_button_state = current_button_state;
+        Timer::after(Duration::from_millis(10)).await;
     }
-
-    // for inspiration have a look at the examples at https://github.com/esp-rs/esp-hal/tree/esp-hal-v1.0.0-rc.0/examples/src/bin
 }
