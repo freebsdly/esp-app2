@@ -25,6 +25,7 @@ extern crate alloc;
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static BOOT_BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
+static LED: Mutex<RefCell<Option<Output>>> = Mutex::new(RefCell::new(None));
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -59,7 +60,12 @@ async fn main(spawner: Spawner) {
         BOOT_BUTTON.borrow_ref_mut(cs).replace(boot_button)
     });
 
+    critical_section::with(|cs| {
+        LED.borrow_ref_mut(cs).replace(led)
+    });
+
     spawner.spawn(run()).expect("run spawn failed");
+    spawner.spawn(button_task()).expect("run spawn failed");
 }
 
 #[embassy_executor::task]
@@ -71,22 +77,10 @@ async fn run() {
 }
 
 #[embassy_executor::task]
-async fn button_task(boot_button: Input<'static>, mut led: Output<'static>) {
-    // 初始化 LED 状态 (假设初始为关闭)
-    led.set_low();
-    let mut last_button_state = false;
-
+async fn button_task() {
     loop {
-        let current_button_state = boot_button.is_high();
-        if current_button_state && !last_button_state {
-            Timer::after(Duration::from_millis(20)).await;
-            if boot_button.is_high() {
-                info!("Button pressed!");
-                led.toggle();
-            }
-        }
-        last_button_state = current_button_state;
-        Timer::after(Duration::from_millis(10)).await;
+        warn!("button task");
+        Timer::after(Duration::from_secs(2)).await;
     }
 }
 
@@ -106,6 +100,12 @@ fn handler() {
             .is_interrupt_set()
     }) {
         info!("boot button was the source of the interrupt");
+        critical_section::with(|cs| {
+            LED.borrow_ref_mut(cs)
+                .as_mut()
+                .unwrap()
+                .toggle();
+        });
     } else {
         warn!("Button was not the source of the interrupt");
     }
