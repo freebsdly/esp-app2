@@ -591,6 +591,7 @@ dependencies = [
 name = "esp-app2"
 version = "0.1.0"
 dependencies = [
+ "cfg-if",
  "critical-section",
  "defmt 1.0.1",
  "embassy-executor",
