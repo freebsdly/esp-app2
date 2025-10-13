@@ -44,7 +44,10 @@ async fn main(spawner: Spawner) {
 
     info!("Embassy initialized!");
 
-    let i2c = I2c::new(peripherals.I2C0, I2cConfig::default()).expect("Failed to initialize I2C");
+    let i2c = I2c::new(peripherals.I2C0, I2cConfig::default()).expect("Failed to initialize I2C")
+        .with_sda(peripherals.GPIO41)
+        .with_scl(peripherals.GPIO42);
+
 
     critical_section::with(|cs| I2C.borrow_ref_mut(cs).replace(i2c));
 
@@ -102,9 +105,7 @@ async fn i2c_scan() {
                 Ok(_) => {
                     info!("Found device at address: 0x{:02X}", addr);
                 }
-                Err(_) => {
-                    warn!("No device at address: 0x{:02X}", addr)
-                }
+                Err(_) => {}
             }
         }
     });
