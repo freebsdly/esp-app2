@@ -20,6 +20,8 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hal::{handler, ram, Blocking};
 use {esp_backtrace as _, esp_println as _};
 
+mod xl9555;
+
 extern crate alloc;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
@@ -44,10 +46,10 @@ async fn main(spawner: Spawner) {
 
     info!("Embassy initialized!");
 
-    let i2c = I2c::new(peripherals.I2C0, I2cConfig::default()).expect("Failed to initialize I2C")
+    let i2c = I2c::new(peripherals.I2C0, I2cConfig::default())
+        .expect("Failed to initialize I2C")
         .with_sda(peripherals.GPIO41)
         .with_scl(peripherals.GPIO42);
-
 
     critical_section::with(|cs| I2C.borrow_ref_mut(cs).replace(i2c));
 
@@ -73,6 +75,7 @@ async fn main(spawner: Spawner) {
     critical_section::with(|cs| LED.borrow_ref_mut(cs).replace(led));
 
     spawner.spawn(i2c_scan()).ok();
+    spawner.spawn(read_keys()).ok();
     spawner.spawn(run()).expect("run spawn failed");
     spawner.spawn(button_task()).expect("run spawn failed");
 }
@@ -109,6 +112,56 @@ async fn i2c_scan() {
             }
         }
     });
+}
+
+/**
+* 读取按键输入
+*/
+#[embassy_executor::task]
+async fn read_keys() {
+    loop {
+        critical_section::with(|cs| {
+            let mut i2c = I2C.borrow_ref_mut(cs);
+            let i2c_ref = i2c.as_mut().unwrap();
+
+            // 读取端口0和端口1的输入值
+            let mut port0_data = [0u8];
+            let mut port1_data = [0u8];
+
+            i2c_ref
+                .write_read(
+                    xl9555::XL9555_ADDR,
+                    &[xl9555::regsisters::INPUT_PORT_0],
+                    &mut port0_data,
+                )
+                .ok();
+            i2c_ref
+                .write_read(
+                    xl9555::XL9555_ADDR,
+                    &[xl9555::regsisters::INPUT_PORT_1],
+                    &mut port1_data,
+                )
+                .ok();
+
+            let key_value: u16 = (port1_data[0] as u16) << 8 | (port0_data[0] as u16);
+
+            // 检查特定按键状态 (低电平表示按下)
+            if (key_value & xl9555::io_bits::KEY0_IO) == 0 {
+                info!("KEY0 pressed");
+            }
+            if (key_value & xl9555::io_bits::KEY1_IO) == 0 {
+                info!("KEY1 pressed");
+            }
+            if (key_value & xl9555::io_bits::KEY2_IO) == 0 {
+                info!("KEY2 pressed");
+            }
+            if (key_value & xl9555::io_bits::KEY3_IO) == 0 {
+                info!("KEY3 pressed");
+            }
+        });
+
+        Timer::after_millis(50).await; // 每50ms检查一次按键状态
+    }
 }
 
 /**
