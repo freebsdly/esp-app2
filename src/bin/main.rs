@@ -6,11 +6,12 @@
     holding buffers for the duration of a data transfer."
 )]
 
+use crate::eeprom::At24C02;
 use core::cell::RefCell;
 use critical_section::Mutex;
 use defmt::{info, warn};
 use embassy_executor::Spawner;
-use embassy_time::{Duration, Timer};
+use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig};
 use esp_hal::i2c::master::Config as I2cConfig;
@@ -20,6 +21,7 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hal::{handler, ram, Blocking};
 use {esp_backtrace as _, esp_println as _};
 
+mod eeprom;
 mod xl9555;
 
 extern crate alloc;
@@ -60,8 +62,9 @@ async fn main(spawner: Spawner) {
     let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
         .expect("Failed to initialize WIFI controller");
 
+    // setup interrupt
     let mut io = Io::new(peripherals.IO_MUX);
-    io.set_interrupt_handler(handler);
+    io.set_interrupt_handler(interrupt_handler);
 
     // 分配 GPIO 引脚
     let led = Output::new(peripherals.GPIO1, Level::Low, OutputConfig::default());
@@ -76,8 +79,8 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(i2c_scan()).ok();
     spawner.spawn(read_keys()).ok();
+    spawner.spawn(eeprom_demo()).ok();
     spawner.spawn(run()).expect("run spawn failed");
-    spawner.spawn(button_task()).expect("run spawn failed");
 }
 
 #[embassy_executor::task]
@@ -85,14 +88,6 @@ async fn run() {
     loop {
         info!("tick");
         Timer::after_secs(1).await;
-    }
-}
-
-#[embassy_executor::task]
-async fn button_task() {
-    loop {
-        warn!("button task");
-        Timer::after(Duration::from_secs(2)).await;
     }
 }
 
@@ -169,7 +164,7 @@ async fn read_keys() {
  */
 #[handler]
 #[ram]
-fn handler() {
+fn interrupt_handler() {
     info!(
         "GPIO Interrupt with priority {}",
         esp_hal::xtensa_lx::interrupt::get_level()
@@ -197,4 +192,66 @@ fn handler() {
             .unwrap()
             .clear_interrupt()
     });
+}
+
+#[embassy_executor::task]
+async fn eeprom_demo() {
+    // 创建 EEPROM 实例 (假设设备地址为 0x50)
+    let mut eeprom = At24C02::new(&I2C, 0x50);
+
+    info!("EEPROM demo started");
+
+    // 写入单个字节
+    match eeprom.write_byte(0x00, 0xAB).await {
+        Ok(_) => info!("Successfully wrote 0xAB to address 0x00"),
+        Err(e) => warn!("Failed to write byte: {:?}", e),
+    }
+
+    // 等待一段时间让写操作完成（EEPROM写入需要时间）
+    Timer::after_millis(10).await;
+
+    // 读取刚才写入的字节
+    match eeprom.read_byte(0x00).await {
+        Ok(value) => info!("Read value from address 0x00: 0x{:02X}", value),
+        Err(e) => warn!("Failed to read byte: {:?}", e),
+    }
+
+    // 写入一页数据
+    let page_data = [0x11, 0x22, 0x33, 0x44];
+    match eeprom.write_page(0x10, &page_data).await {
+        Ok(_) => info!("Successfully wrote page data starting at address 0x10"),
+        Err(e) => warn!("Failed to write page: {:?}", e),
+    }
+
+    // 等待写操作完成
+    Timer::after_millis(10).await;
+
+    // 逐个读取并验证写入的数据
+    for i in 0..page_data.len() {
+        match eeprom.read_byte(0x10 + i as u8).await {
+            Ok(value) => {
+                if value == page_data[i] {
+                    info!(
+                        "Verified data at address 0x{:02X}: 0x{:02X}",
+                        0x10 + i as u8,
+                        value
+                    );
+                } else {
+                    warn!(
+                        "Data mismatch at address 0x{:02X}: expected 0x{:02X}, got 0x{:02X}",
+                        0x10 + i as u8,
+                        page_data[i],
+                        value
+                    );
+                }
+            }
+            Err(e) => warn!(
+                "Failed to read byte at address 0x{:02X}: {:?}",
+                0x10 + i as u8,
+                e
+            ),
+        }
+    }
+
+    info!("EEPROM demo completed");
 }
