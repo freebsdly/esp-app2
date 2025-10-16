@@ -33,6 +33,8 @@ esp_bootloader_esp_idf::esp_app_desc!();
 static BOOT_BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static LED: Mutex<RefCell<Option<Output>>> = Mutex::new(RefCell::new(None));
 static I2C: Mutex<RefCell<Option<I2c<Blocking>>>> = Mutex::new(RefCell::new(None));
+// 在全局静态变量中添加按键状态跟踪
+static KEY_STATES: Mutex<RefCell<[bool; 4]>> = Mutex::new(RefCell::new([false; 4])); // [KEY0, KEY1, KEY2, KEY3]
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -78,9 +80,9 @@ async fn main(spawner: Spawner) {
     critical_section::with(|cs| LED.borrow_ref_mut(cs).replace(led));
 
     spawner.spawn(i2c_scan()).ok();
-    spawner.spawn(read_keys()).ok();
     spawner.spawn(eeprom_demo()).ok();
-    spawner.spawn(run()).expect("run spawn failed");
+    spawner.spawn(read_keys()).ok();
+    // spawner.spawn(run()).expect("run spawn failed");
 }
 
 #[embassy_executor::task]
@@ -111,6 +113,17 @@ async fn i2c_scan() {
 
 /**
 * 读取按键输入
+* 状态跟踪: 添加 KEY_STATES 全局变量记录每个按键的上一次状态
+* 边缘检测: 只有当按键从释放状态(高电平)变为按下状态(低电平)时才触发事件
+* 状态更新: 每次循环结束后更新按键状态数组
+* 这样修改后，即使按键持续按下也只会触发一次日志输出，直到按键释放后再次按下才会重新触发
+* 硬件连接：
+* iic_int (XL9555中断引脚) 连接到 ESP32 的 GPIO0
+* GPIO0 同时也是 BOOT_BUTTON 的引脚
+* 中断触发机制：
+* 当 KEY0-KEY3 按下时，XL9555 通过 iic_int 引脚产生中断信号
+* 该信号传递到 GPIO0，触发了已注册的中断处理程序
+* 中断处理程序中会切换 LED 状态
 */
 #[embassy_executor::task]
 async fn read_keys() {
@@ -140,22 +153,34 @@ async fn read_keys() {
 
             let key_value: u16 = (port1_data[0] as u16) << 8 | (port0_data[0] as u16);
 
-            // 检查特定按键状态 (低电平表示按下)
-            if (key_value & xl9555::io_bits::KEY0_IO) == 0 {
-                info!("KEY0 pressed");
+            // 获取当前按键状态（低电平表示按下）
+            let current_states = [
+                (key_value & xl9555::io_bits::KEY0_IO) == 0,
+                (key_value & xl9555::io_bits::KEY1_IO) == 0,
+                (key_value & xl9555::io_bits::KEY2_IO) == 0,
+                (key_value & xl9555::io_bits::KEY3_IO) == 0,
+            ];
+
+            // 检查按键状态变化
+            let mut key_states = KEY_STATES.borrow_ref_mut(cs);
+            for i in 0..4 {
+                if current_states[i] && !key_states[i] {
+                    // 按键刚被按下
+                    match i {
+                        0 => info!("KEY0 pressed"),
+                        1 => info!("KEY1 pressed"),
+                        2 => info!("KEY2 pressed"),
+                        3 => info!("KEY3 pressed"),
+                        _ => {}
+                    }
+                }
             }
-            if (key_value & xl9555::io_bits::KEY1_IO) == 0 {
-                info!("KEY1 pressed");
-            }
-            if (key_value & xl9555::io_bits::KEY2_IO) == 0 {
-                info!("KEY2 pressed");
-            }
-            if (key_value & xl9555::io_bits::KEY3_IO) == 0 {
-                info!("KEY3 pressed");
-            }
+
+            // 更新按键状态
+            *key_states = current_states;
         });
 
-        Timer::after_millis(50).await; // 每50ms检查一次按键状态
+        Timer::after_millis(50).await;
     }
 }
 
