@@ -31,7 +31,24 @@ extern crate alloc;
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
-esp_bootloader_esp_idf::esp_app_desc!();
+esp_bootloader_esp_idf::esp_app_desc!(
+    // Version
+    "1.0.0",
+    // Project name
+    "my_project",
+    // Build time
+    "12:00:00",
+    // Build date
+    "2021-01-01",
+    // ESP-IDF version
+    "4.4",
+    // MMU page size
+    8 * 1024,
+    // Minimal eFuse block revision supported by image. Format: major * 100 + minor
+    0,
+    // Maximum eFuse block revision supported by image. Format: major * 100 + minor
+    u16::MAX
+);
 
 static BOOT_BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static LED: Mutex<RefCell<Option<Output>>> = Mutex::new(RefCell::new(None));
