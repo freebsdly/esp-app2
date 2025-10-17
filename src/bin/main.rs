@@ -19,6 +19,9 @@ use esp_hal::i2c::master::I2c;
 use esp_hal::timer::systimer::SystemTimer;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::{handler, ram, Blocking};
+use esp_wifi::wifi::WifiController;
+use esp_wifi::EspWifiController;
+use static_cell::StaticCell;
 use {esp_backtrace as _, esp_println as _};
 
 mod eeprom;
@@ -34,7 +37,12 @@ static BOOT_BUTTON: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None
 static LED: Mutex<RefCell<Option<Output>>> = Mutex::new(RefCell::new(None));
 static I2C: Mutex<RefCell<Option<I2c<Blocking>>>> = Mutex::new(RefCell::new(None));
 // 在全局静态变量中添加按键状态跟踪
-static KEY_STATES: Mutex<RefCell<[bool; 4]>> = Mutex::new(RefCell::new([false; 4])); // [KEY0, KEY1, KEY2, KEY3]
+// [KEY0, KEY1, KEY2, KEY3]
+static KEY_STATES: Mutex<RefCell<[bool; 4]>> = Mutex::new(RefCell::new([false; 4]));
+
+static WIFI_INIT: StaticCell<EspWifiController> = StaticCell::new();
+static WIFI_CONTROLLER: Mutex<RefCell<Option<WifiController<'static>>>> =
+    Mutex::new(RefCell::new(None));
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -61,8 +69,62 @@ async fn main(spawner: Spawner) {
     let timer1 = TimerGroup::new(peripherals.TIMG0);
     let wifi_init =
         esp_wifi::init(timer1.timer0, rng).expect("Failed to initialize WIFI/BLE controller");
-    let (mut _wifi_controller, _interfaces) = esp_wifi::wifi::new(&wifi_init, peripherals.WIFI)
-        .expect("Failed to initialize WIFI controller");
+
+    let wifi_init_static = WIFI_INIT.init(wifi_init);
+
+    let (mut wifi_controller, _interfaces) =
+        esp_wifi::wifi::new(wifi_init_static, peripherals.WIFI)
+            .expect("Failed to initialize WIFI controller");
+
+    // 设置Wi-Fi模式，例如STA模式
+    wifi_controller
+        .set_configuration(&esp_wifi::wifi::Configuration::Client(
+            esp_wifi::wifi::ClientConfiguration::default(),
+        ))
+        .expect("Failed to set Wi-Fi configuration");
+
+    match wifi_controller.start_async().await {
+        Ok(()) => {
+            info!("Wi-Fi started");
+        }
+        Err(err) => {
+            warn!("Wi-Fi start failed: {}", err);
+        }
+    }
+
+    match wifi_controller.is_started() {
+        Ok(started) => {
+            if started {
+                info!("Wi-Fi started");
+            } else {
+                warn!("Wi-Fi not started");
+            }
+        }
+        Err(err) => {
+            warn!("Failed to check Wi-Fi started: {}", err);
+        }
+    };
+
+    let result = wifi_controller.scan_n_async(10).await;
+
+    match result {
+        Ok(networks) => {
+            info!("Scan done, found {} networks", networks.len());
+            for network in networks {
+                info!(
+                    "SSID: {}, Channel: {}, RSSI: {}",
+                    core::str::from_utf8((&network.ssid).as_ref()).unwrap_or("<invalid utf-8>"),
+                    network.channel,
+                    network.auth_method
+                );
+            }
+        }
+        Err(err) => {
+            warn!("Wi-Fi scan failed: {}", err);
+        }
+    }
+
+    critical_section::with(|cs| WIFI_CONTROLLER.borrow_ref_mut(cs).replace(wifi_controller));
 
     // setup interrupt
     let mut io = Io::new(peripherals.IO_MUX);
@@ -79,6 +141,7 @@ async fn main(spawner: Spawner) {
 
     critical_section::with(|cs| LED.borrow_ref_mut(cs).replace(led));
 
+    // spawner.spawn(wifi_scan()).ok();
     spawner.spawn(i2c_scan()).ok();
     spawner.spawn(eeprom_demo()).ok();
     spawner.spawn(read_keys()).ok();
@@ -92,6 +155,35 @@ async fn run() {
         Timer::after_secs(1).await;
     }
 }
+
+// #[embassy_executor::task]
+// async fn wifi_scan() {
+//     info!("Wifi Scanning...");
+//
+//     // 执行 Wi-Fi 扫描
+//     critical_section::with(|cs| {
+//         let mut wifi_controller = WIFI_CONTROLLER.borrow_ref_mut(cs);
+//         let wifi_controller_ref = wifi_controller.as_mut().unwrap();
+//
+//         // 使用异步扫描，最多扫描5个网络
+//         let scan_result = wifi_controller_ref.scan_n(5);
+//
+//         match scan_result {
+//             Ok(networks) => {
+//                 info!("Scan done, found {} networks", networks.len());
+//                 networks.iter().for_each(|network| {
+//                     info!(
+//                         "SSID: {}, Channel: {}, RSSI: {}",
+//                         core::str::from_utf8((&network.ssid).as_ref()).unwrap_or("<invalid utf-8>"),
+//                         network.channel,
+//                         network.auth_method
+//                     );
+//                 });
+//             }
+//             Err(err) => warn!("Wifi scan failed: {}", err),
+//         };
+//     });
+// }
 
 #[embassy_executor::task]
 async fn i2c_scan() {
