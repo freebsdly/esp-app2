@@ -24,7 +24,6 @@ esp-backtrace = { version = "0.17.0", features = [
     "exception-handler",
     "panic-handler",
 ] }
-esp-sync = { version = "0.1.0", features = ["defmt", "esp32s3"] }
 esp-println = { version = "0.15.0", features = ["defmt-espflash", "esp32s3"] }
 esp-hal-embassy = { version = "0.9.0", features = ["defmt", "esp32s3"] }
 esp-wifi = { version = "0.15.1", features = [
@@ -37,11 +36,12 @@ esp-wifi = { version = "0.15.1", features = [
 ] }
 
 # embassy
-embassy-executor = { version = "0.7", features = [
+embassy-executor = { version = "0.7.0", features = [
     "defmt",
-    "task-arena-size-20480",
+    #    "task-arena-size-20480",
 ] }
 embassy-time = { version = "0.5", features = ["defmt"] }
+embassy-sync = { version = "0.7.2", features = ["defmt"]}
 embassy-net = { version = "0.7.0", features = [
     "defmt",
     "dhcpv4",
@@ -49,8 +49,11 @@ embassy-net = { version = "0.7.0", features = [
     "tcp",
     "udp",
 ] }
-embedded-io = { version = "0.6.1", features = ["defmt-03"] }
-embedded-io-async = { version = "0.6.1", features = ["defmt-03"] }
+
+# embedded-io
+#embedded-io = { version = "0.6.1", features = ["defmt-03"] }
+#embedded-io-async = { version = "0.6.1", features = ["defmt-03"] }
+
 
 # for more networking protocol support see https://crates.io/crates/edge-net
 critical-section = "1.2.0"

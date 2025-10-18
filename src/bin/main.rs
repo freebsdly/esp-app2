@@ -11,6 +11,8 @@ use core::cell::RefCell;
 use critical_section::Mutex;
 use defmt::{info, warn};
 use embassy_executor::Spawner;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::mutex::Mutex as EmbassyMutex;
 use embassy_time::Timer;
 use esp_hal::clock::CpuClock;
 use esp_hal::gpio::{Event, Input, InputConfig, Io, Level, Output, OutputConfig};
@@ -58,8 +60,8 @@ static I2C: Mutex<RefCell<Option<I2c<Blocking>>>> = Mutex::new(RefCell::new(None
 static KEY_STATES: Mutex<RefCell<[bool; 4]>> = Mutex::new(RefCell::new([false; 4]));
 
 static WIFI_INIT: StaticCell<EspWifiController> = StaticCell::new();
-static WIFI_CONTROLLER: Mutex<RefCell<Option<WifiController<'static>>>> =
-    Mutex::new(RefCell::new(None));
+static WIFI_CONTROLLER: EmbassyMutex<CriticalSectionRawMutex, Option<WifiController<'static>>> =
+    EmbassyMutex::new(None);
 
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
@@ -122,26 +124,7 @@ async fn main(spawner: Spawner) {
         }
     };
 
-    let result = wifi_controller.scan_n_async(10).await;
-
-    match result {
-        Ok(networks) => {
-            info!("Scan done, found {} networks", networks.len());
-            for network in networks {
-                info!(
-                    "SSID: {}, Channel: {}, RSSI: {}",
-                    core::str::from_utf8((&network.ssid).as_ref()).unwrap_or("<invalid utf-8>"),
-                    network.channel,
-                    network.auth_method
-                );
-            }
-        }
-        Err(err) => {
-            warn!("Wi-Fi scan failed: {}", err);
-        }
-    }
-
-    critical_section::with(|cs| WIFI_CONTROLLER.borrow_ref_mut(cs).replace(wifi_controller));
+    WIFI_CONTROLLER.lock().await.replace(wifi_controller);
 
     // setup interrupt
     let mut io = Io::new(peripherals.IO_MUX);
@@ -158,7 +141,7 @@ async fn main(spawner: Spawner) {
 
     critical_section::with(|cs| LED.borrow_ref_mut(cs).replace(led));
 
-    // spawner.spawn(wifi_scan()).ok();
+    spawner.spawn(wifi_scan()).ok();
     spawner.spawn(i2c_scan()).ok();
     spawner.spawn(eeprom_demo()).ok();
     spawner.spawn(read_keys()).ok();
@@ -173,34 +156,32 @@ async fn run() {
     }
 }
 
-// #[embassy_executor::task]
-// async fn wifi_scan() {
-//     info!("Wifi Scanning...");
-//
-//     // 执行 Wi-Fi 扫描
-//     critical_section::with(|cs| {
-//         let mut wifi_controller = WIFI_CONTROLLER.borrow_ref_mut(cs);
-//         let wifi_controller_ref = wifi_controller.as_mut().unwrap();
-//
-//         // 使用异步扫描，最多扫描5个网络
-//         let scan_result = wifi_controller_ref.scan_n(5);
-//
-//         match scan_result {
-//             Ok(networks) => {
-//                 info!("Scan done, found {} networks", networks.len());
-//                 networks.iter().for_each(|network| {
-//                     info!(
-//                         "SSID: {}, Channel: {}, RSSI: {}",
-//                         core::str::from_utf8((&network.ssid).as_ref()).unwrap_or("<invalid utf-8>"),
-//                         network.channel,
-//                         network.auth_method
-//                     );
-//                 });
-//             }
-//             Err(err) => warn!("Wifi scan failed: {}", err),
-//         };
-//     });
-// }
+#[embassy_executor::task]
+async fn wifi_scan() {
+    info!("Wifi Scanning...");
+
+    let mut guard = WIFI_CONTROLLER.lock().await;
+    if let Some(controller) = guard.as_mut() {
+        let result = controller.scan_n_async(10).await;
+
+        match result {
+            Ok(networks) => {
+                info!("Scan done, found {} networks", networks.len());
+                for network in networks {
+                    info!(
+                        "SSID: {}, Channel: {}, RSSI: {}",
+                        core::str::from_utf8((&network.ssid).as_ref()).unwrap_or("<invalid utf-8>"),
+                        network.channel,
+                        network.auth_method
+                    );
+                }
+            }
+            Err(err) => {
+                warn!("Wi-Fi scan failed: {}", err);
+            }
+        }
+    }
+}
 
 #[embassy_executor::task]
 async fn i2c_scan() {

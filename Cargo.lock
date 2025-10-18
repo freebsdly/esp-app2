@@ -375,6 +375,7 @@ checksum = "73974a3edbd0bd286759b3d483540f0ebef705919a5f56f4fc7709066f71689b"
 dependencies = [
  "cfg-if",
  "critical-section",
+ "defmt 1.0.1",
  "embedded-io-async",
  "futures-core",
  "futures-sink",
@@ -595,16 +596,14 @@ dependencies = [
  "defmt 1.0.1",
  "embassy-executor",
  "embassy-net",
+ "embassy-sync 0.7.2",
  "embassy-time 0.5.0",
- "embedded-io",
- "embedded-io-async",
  "esp-alloc",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-hal-embassy",
  "esp-println",
- "esp-sync",
  "esp-wifi",
  "smoltcp",
  "static_cell",
@@ -711,11 +710,11 @@ dependencies = [
  "portable-atomic",
  "rand_core 0.6.4",
  "rand_core 0.9.3",
- "riscv 0.12.1",
+ "riscv",
  "serde",
  "strum",
  "ufmt-write",
- "xtensa-lx 0.12.0",
+ "xtensa-lx",
  "xtensa-lx-rt",
 ]
 
@@ -809,7 +808,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a00370dfcb0ccc01c6b2540076379c6efd6890a27f584de217c38e3239e19d5"
 dependencies = [
  "document-features",
- "riscv 0.12.1",
+ "riscv",
  "riscv-rt-macros",
 ]
 
@@ -822,22 +821,6 @@ dependencies = [
  "cfg-if",
  "document-features",
  "esp-metadata-generated 0.2.0",
-]
-
-[[package]]
-name = "esp-sync"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b977b028ae5959f0b2daf6602a1d751723b2d329c7251daf869ad382c8ed1543"
-dependencies = [
- "cfg-if",
- "defmt 1.0.1",
- "document-features",
- "embassy-sync 0.6.2",
- "embassy-sync 0.7.2",
- "esp-metadata-generated 0.2.0",
- "riscv 0.15.0",
- "xtensa-lx 0.13.0",
 ]
 
 [[package]]
@@ -1369,20 +1352,7 @@ dependencies = [
  "critical-section",
  "embedded-hal 1.0.0",
  "paste",
- "riscv-macros 0.1.0",
- "riscv-pac",
-]
-
-[[package]]
-name = "riscv"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b05cfa3f7b30c84536a9025150d44d26b8e1cc20ddf436448d74cd9591eefb25"
-dependencies = [
- "critical-section",
- "embedded-hal 1.0.0",
- "paste",
- "riscv-macros 0.3.0",
+ "riscv-macros",
  "riscv-pac",
 ]
 
@@ -1391,17 +1361,6 @@ name = "riscv-macros"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f265be5d634272320a7de94cea15c22a3bfdd4eb42eb43edc528415f066a1f25"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "riscv-macros"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d323d13972c1b104aa036bc692cd08b822c8bbf23d79a27c526095856499799"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1722,15 +1681,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "xtensa-lx"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e012d667b0aa6d2592ace8ef145a98bff3e76cca7a644f4181ecd7a916ed289b"
-dependencies = [
- "critical-section",
-]
-
-[[package]]
 name = "xtensa-lx-rt"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1738,7 +1688,7 @@ checksum = "520a8fb0121eb6868f4f5ff383e262dc863f9042496724e01673a98a9b7e6c2b"
 dependencies = [
  "document-features",
  "r0",
- "xtensa-lx 0.12.0",
+ "xtensa-lx",
  "xtensa-lx-rt-proc-macros",
 ]
 
